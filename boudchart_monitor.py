@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 Script de monitoring pour Boudchart - Casablanca
-Vérifie le statut du spectacle et envoie une notification quand il passe à "TICKETS"
-Version améliorée avec support Telegram, Discord, et variables d'environnement
+Version corrigée avec parsing précis de la structure HTML
 """
 
 import requests
@@ -16,6 +15,7 @@ from pathlib import Path
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import re
 
 # Configuration depuis variables d'environnement ou valeurs par défaut
 CHECK_INTERVAL = int(os.getenv('CHECK_INTERVAL', '300'))  # 5 minutes
@@ -104,45 +104,88 @@ class BoudchartMonitor:
             return None
     
     def parse_casablanca_status(self, html_content):
-        """Parse le HTML pour trouver le statut de Casablanca"""
+        """
+        Parse le HTML pour trouver le statut de Casablanca
+        Méthode améliorée basée sur la structure réelle du site
+        """
         try:
             soup = BeautifulSoup(html_content, 'html.parser')
             
-            # Recherche du texte "Casablanca" et du statut associé
-            for element in soup.find_all(text=lambda t: t and 'Casablanca' in str(t)):
-                parent = element.parent
-                parent_text = parent.get_text()
+            # Le site liste les concerts avec cette structure:
+            # <h3>Casablanca</h3>
+            # Suivi de "Soon" ou d'un lien "Tickets"
+            
+            # Méthode 1: Trouver tous les h3 et chercher celui contenant "Casablanca"
+            all_headings = soup.find_all(['h3', 'h2', 'h4'])
+            
+            for i, heading in enumerate(all_headings):
+                heading_text = heading.get_text().strip()
                 
-                if 'TICKETS' in parent_text.upper():
+                # Vérifier si c'est le heading Casablanca
+                if 'casablanca' in heading_text.lower():
+                    logging.info(f"✓ Trouvé le heading Casablanca: '{heading_text}'")
+                    
+                    # Chercher le statut dans les éléments suivants
+                    # Le statut peut être un lien ou un texte
+                    next_elements = heading.find_next_siblings(limit=5)
+                    
+                    for elem in next_elements:
+                        elem_text = elem.get_text().strip().upper()
+                        
+                        # Chercher un lien avec "Tickets"
+                        link = elem.find('a')
+                        if link:
+                            link_text = link.get_text().strip().upper()
+                            if 'TICKET' in link_text:
+                                logging.info(f"✓ Statut trouvé via lien: TICKETS")
+                                return 'TICKETS'
+                        
+                        # Chercher le texte "Soon"
+                        if 'SOON' in elem_text:
+                            logging.info(f"✓ Statut trouvé via texte: SOON")
+                            return 'SOON'
+                        
+                        # Chercher "Sold out"
+                        if 'SOLD OUT' in elem_text or 'SOLD-OUT' in elem_text:
+                            logging.info(f"✓ Statut trouvé: SOLD OUT")
+                            return 'SOLD_OUT'
+                    
+                    # Chercher dans le parent du heading
+                    parent = heading.parent
+                    if parent:
+                        parent_text = parent.get_text().upper()
+                        
+                        # Vérifier si on trouve "Soon" juste après Casablanca
+                        if 'SOON' in parent_text:
+                            # S'assurer que c'est bien pour Casablanca et pas un autre concert
+                            text_after_casa = parent_text.split('CASABLANCA')[-1]
+                            if 'SOON' in text_after_casa[:50]:  # Dans les 50 premiers caractères
+                                logging.info(f"✓ Statut trouvé dans parent: SOON")
+                                return 'SOON'
+                        
+                        if 'TICKET' in parent_text:
+                            text_after_casa = parent_text.split('CASABLANCA')[-1]
+                            if 'TICKET' in text_after_casa[:50]:
+                                logging.info(f"✓ Statut trouvé dans parent: TICKETS")
+                                return 'TICKETS'
+            
+            # Méthode 2: Recherche par regex dans tout le HTML
+            # Chercher "Casablanca" suivi de "Soon" ou "Tickets"
+            casa_pattern = re.search(r'casablanca.*?(soon|tickets?)', html_content, re.IGNORECASE | re.DOTALL)
+            if casa_pattern:
+                status = casa_pattern.group(1).upper()
+                if 'TICKET' in status:
+                    logging.info(f"✓ Statut trouvé via regex: TICKETS")
                     return 'TICKETS'
-                elif 'SOON' in parent_text.upper():
-                    return 'SOON'
-                
-                # Vérifier les éléments suivants
-                next_sibling = parent.find_next_sibling()
-                if next_sibling:
-                    sibling_text = next_sibling.get_text()
-                    if 'TICKETS' in sibling_text.upper():
-                        return 'TICKETS'
-                    elif 'SOON' in sibling_text.upper():
-                        return 'SOON'
-            
-            # Recherche par classes/IDs communs
-            casablanca_sections = soup.find_all(['div', 'section', 'article'], 
-                                               text=lambda t: t and 'casablanca' in str(t).lower())
-            
-            for section in casablanca_sections:
-                text = section.get_text().upper()
-                if 'TICKETS' in text:
-                    return 'TICKETS'
-                elif 'SOON' in text:
+                elif 'SOON' in status:
+                    logging.info(f"✓ Statut trouvé via regex: SOON")
                     return 'SOON'
             
-            logging.warning("Statut de Casablanca non trouvé dans la page")
+            logging.warning("⚠️  Statut de Casablanca non trouvé dans la page")
             return None
             
         except Exception as e:
-            logging.error(f"Erreur lors du parsing: {e}")
+            logging.error(f"❌ Erreur lors du parsing: {e}")
             return None
     
     def send_notification(self, status):
@@ -166,8 +209,11 @@ Notification envoyée le {datetime.now().strftime('%d/%m/%Y à %H:%M:%S')}
         print("="*60 + "\n")
         
         # Fichier de notification
-        with open('NOTIFICATION.txt', 'w') as f:
-            f.write(message)
+        try:
+            with open('NOTIFICATION.txt', 'w') as f:
+                f.write(message)
+        except Exception as e:
+            logging.error(f"Erreur écriture NOTIFICATION.txt: {e}")
         
         # Email
         if self.email_config['enabled']:
