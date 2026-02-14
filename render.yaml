@@ -1,0 +1,20 @@
+services:
+  - type: worker
+    name: boudchart-monitor
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: CHECK_INTERVAL
+        value: 300
+      - key: TZ
+        value: Africa/Casablanca
+      # Décommentez et configurez pour les notifications email
+      # - key: EMAIL_ENABLED
+      #   value: false
+      # - key: SENDER_EMAIL
+      #   value: votre_email@gmail.com
+      # - key: SENDER_PASSWORD
+      #   value: votre_mot_de_passe_application
+      # - key: RECIPIENT_EMAIL
+      #   value: destinataire@email.com

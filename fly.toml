@@ -1,0 +1,19 @@
+app = "boudchart-monitor"
+primary_region = "cdg"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  CHECK_INTERVAL = "300"
+  TZ = "Africa/Casablanca"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 80
+
+[deploy]
+  strategy = "immediate"
