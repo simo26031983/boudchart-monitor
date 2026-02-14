@@ -116,68 +116,82 @@ class DualMonitor:
         try:
             soup = BeautifulSoup(html_content, 'html.parser')
             
+            # Méthode 1: Recherche dans le texte complet
+            full_text = soup.get_text()
+            
+            # Trouver la position de "Casablanca" dans le texte
+            casa_index = full_text.upper().find('CASABLANCA')
+            
+            if casa_index != -1:
+                # Extraire 200 caractères après "Casablanca"
+                text_after_casa = full_text[casa_index:casa_index+200].upper()
+                
+                logging.info(f"[Boudchart] Texte après Casablanca: '{text_after_casa[:100]}'")
+                
+                # Chercher "TICKETS" ou "SOON" dans les 200 caractères suivants
+                if 'TICKETS' in text_after_casa:
+                    # Vérifier qu'on n'est pas sur un autre concert
+                    # Il ne doit pas y avoir d'autre nom de ville entre Casablanca et TICKETS
+                    other_cities = ['PARIS', 'BORDEAUX', 'TOULOUSE', 'MARSEILLE', 'BRUSSELS', 
+                                  'MADRID', 'OTTAWA', 'MONTREAL', 'TORONTO', 'GENEVA', 
+                                  'TANGIER', 'DÜSSELDORF']
+                    
+                    before_tickets = text_after_casa[:text_after_casa.find('TICKETS')]
+                    
+                    has_other_city = any(city in before_tickets for city in other_cities)
+                    
+                    if not has_other_city:
+                        logging.info(f"[Boudchart] ✓ Statut: TICKETS")
+                        return 'TICKETS'
+                
+                if 'SOON' in text_after_casa:
+                    # Vérifier qu'on n'est pas sur un autre concert
+                    other_cities = ['PARIS', 'BORDEAUX', 'TOULOUSE', 'MARSEILLE', 'BRUSSELS', 
+                                  'MADRID', 'OTTAWA', 'MONTREAL', 'TORONTO', 'GENEVA', 
+                                  'TANGIER', 'DÜSSELDORF']
+                    
+                    before_soon = text_after_casa[:text_after_casa.find('SOON')]
+                    
+                    has_other_city = any(city in before_soon for city in other_cities)
+                    
+                    if not has_other_city:
+                        logging.info(f"[Boudchart] ✓ Statut: SOON")
+                        return 'SOON'
+                
+                if 'SOLD OUT' in text_after_casa or 'SOLD-OUT' in text_after_casa:
+                    logging.info(f"[Boudchart] ✓ Statut: SOLD_OUT")
+                    return 'SOLD_OUT'
+            
+            # Méthode 2: Recherche par éléments HTML
             all_headings = soup.find_all(['h3', 'h2', 'h4'])
             
-            for heading in all_headings:
+            for i, heading in enumerate(all_headings):
                 heading_text = heading.get_text().strip()
                 
                 if 'casablanca' in heading_text.lower():
                     logging.info(f"[Boudchart] Trouvé heading: '{heading_text}'")
                     
-                    # Chercher le statut dans les éléments suivants
+                    # Chercher dans les 5 éléments suivants
                     next_elements = heading.find_next_siblings(limit=5)
                     
                     for elem in next_elements:
                         elem_text = elem.get_text().strip().upper()
                         
-                        link = elem.find('a')
-                        if link:
-                            link_text = link.get_text().strip().upper()
-                            if 'TICKET' in link_text:
-                                logging.info(f"[Boudchart] Statut: TICKETS")
-                                return 'TICKETS'
+                        if 'TICKETS' in elem_text:
+                            logging.info(f"[Boudchart] ✓ Statut: TICKETS (via siblings)")
+                            return 'TICKETS'
                         
                         if 'SOON' in elem_text:
-                            logging.info(f"[Boudchart] Statut: SOON")
+                            logging.info(f"[Boudchart] ✓ Statut: SOON (via siblings)")
                             return 'SOON'
-                        
-                        if 'SOLD OUT' in elem_text or 'SOLD-OUT' in elem_text:
-                            logging.info(f"[Boudchart] Statut: SOLD_OUT")
-                            return 'SOLD_OUT'
-                    
-                    # Chercher dans le parent
-                    parent = heading.parent
-                    if parent:
-                        parent_text = parent.get_text().upper()
-                        
-                        if 'SOON' in parent_text:
-                            text_after_casa = parent_text.split('CASABLANCA')[-1]
-                            if 'SOON' in text_after_casa[:50]:
-                                logging.info(f"[Boudchart] Statut: SOON")
-                                return 'SOON'
-                        
-                        if 'TICKET' in parent_text:
-                            text_after_casa = parent_text.split('CASABLANCA')[-1]
-                            if 'TICKET' in text_after_casa[:50]:
-                                logging.info(f"[Boudchart] Statut: TICKETS")
-                                return 'TICKETS'
             
-            # Recherche par regex
-            casa_pattern = re.search(r'casablanca.*?(soon|tickets?)', html_content, re.IGNORECASE | re.DOTALL)
-            if casa_pattern:
-                status = casa_pattern.group(1).upper()
-                if 'TICKET' in status:
-                    logging.info(f"[Boudchart] Statut (regex): TICKETS")
-                    return 'TICKETS'
-                elif 'SOON' in status:
-                    logging.info(f"[Boudchart] Statut (regex): SOON")
-                    return 'SOON'
-            
-            logging.warning("[Boudchart] Statut non trouvé")
+            logging.warning("[Boudchart] ⚠️  Statut non trouvé")
             return None
             
         except Exception as e:
-            logging.error(f"[Boudchart] Erreur parsing: {e}")
+            logging.error(f"[Boudchart] ❌ Erreur parsing: {e}")
+            import traceback
+            logging.error(traceback.format_exc())
             return None
     
     def check_stade_toulousain(self, html_content):
