@@ -18,7 +18,8 @@ from email.mime.multipart import MIMEMultipart
 # Configuration
 CHECK_INTERVAL = int(os.getenv('CHECK_INTERVAL', '300'))
 BOUDCHART_URL = "https://www.boudchart.com/"
-STADE_TOULOUSAIN_URL = "https://billetterie.stadetoulousain.fr/fr/catalogue/match-rugby-stade-toulousain-montpellier-herault-rugby-club"
+# Remplacer la ligne 21 par :
+STADE_TOULOUSAIN_URL = os.getenv('STADE_TOULOUSAIN_URL', "https://billetterie.stadetoulousain.fr/fr/catalogue/match-rugby-stade-toulousain-montpellier-herault-rugby-club")
 STATE_FILE = "monitoring_state.json"
 LOG_FILE = "monitoring.log"
 
