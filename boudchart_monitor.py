@@ -89,63 +89,63 @@ class DualMonitor:
             return None
     
     def check_boudchart(self, html_content):
-        """Vérifie Boudchart - VERSION SIMPLIFIÉE"""
+        """Vérifie Boudchart - VERSION CORRIGÉE (Parsing Texte)"""
         try:
-            # Conversion en majuscules pour recherche insensible à la casse
-            text_upper = html_content.upper()
+            # 1. On utilise BeautifulSoup pour nettoyer le HTML
+            soup = BeautifulSoup(html_content, 'html.parser')
+            
+            # 2. On extrait uniquement le texte visible, séparé par des espaces
+            # Cela transforme "<div>Casablanca</div><div>...</div><button>SOON</button>"
+            # en "Casablanca ... SOON"
+            text_clean = soup.get_text(separator=' ').upper()
+            
+            # 3. On nettoie les espaces multiples pour avoir une chaine propre
+            text_clean = " ".join(text_clean.split())
             
             # Trouver "CASABLANCA"
-            casa_pos = text_upper.find('CASABLANCA')
+            casa_pos = text_clean.find('CASABLANCA')
             
             if casa_pos == -1:
-                logging.warning("[Boudchart] 'Casablanca' non trouvé dans la page!")
+                logging.warning("[Boudchart] 'Casablanca' non trouvé dans le texte visible!")
                 return None
             
-            # Extraire 300 caractères après "CASABLANCA"
-            text_after = text_upper[casa_pos:casa_pos+300]
+            # 4. On extrait une fenêtre de texte après Casablanca
+            # Comme on a retiré le HTML, 100 caractères suffisent largement
+            text_after = text_clean[casa_pos:casa_pos+100]
             
             # Log pour debug
-            logging.info(f"[Boudchart] Texte après 'CASABLANCA': {text_after[:150]}...")
+            logging.info(f"[Boudchart] Texte visible après 'CASABLANCA': {text_after}...")
             
             # Liste des autres villes pour éviter les faux positifs
             other_cities = ['PARIS', 'BORDEAUX', 'TOULOUSE', 'MARSEILLE', 'BRUSSELS', 
                           'MADRID', 'OTTAWA', 'MONTREAL', 'TORONTO', 'GENEVA', 
-                          'TANGIER', 'DÜSSELDORF']
+                          'TANGIER', 'DÜSSELDORF', 'LILLE', 'LYON']
             
-            # Chercher TICKETS
-            if 'TICKETS' in text_after:
-                tickets_pos = text_after.find('TICKETS')
-                before_tickets = text_after[:tickets_pos]
-                
-                # Vérifier qu'il n'y a pas d'autre ville entre Casablanca et TICKETS
-                has_other_city = any(city in before_tickets for city in other_cities)
-                
-                if not has_other_city:
-                    logging.info("[Boudchart] ✅ Statut détecté: TICKETS")
-                    return 'TICKETS'
-                else:
-                    logging.info("[Boudchart] TICKETS trouvé mais appartient à un autre concert")
+            # Fonction utilitaire pour vérifier si le statut appartient bien à Casablanca
+            def is_valid_match(keyword, text_segment):
+                if keyword not in text_segment:
+                    return False
+                keyword_pos = text_segment.find(keyword)
+                before_keyword = text_segment[:keyword_pos]
+                # Si une autre ville apparait entre Casablanca et le mot clé, ce n'est pas le bon concert
+                if any(city in before_keyword for city in other_cities):
+                    return False
+                return True
+
+            # Vérifications des statuts
+            if is_valid_match('TICKETS', text_after):
+                logging.info("[Boudchart] ✅ Statut détecté: TICKETS")
+                return 'TICKETS'
             
-            # Chercher SOON
-            if 'SOON' in text_after:
-                soon_pos = text_after.find('SOON')
-                before_soon = text_after[:soon_pos]
+            if is_valid_match('SOON', text_after):
+                logging.info("[Boudchart] ✅ Statut détecté: SOON")
+                return 'SOON'
                 
-                # Vérifier qu'il n'y a pas d'autre ville
-                has_other_city = any(city in before_soon for city in other_cities)
-                
-                if not has_other_city:
-                    logging.info("[Boudchart] ✅ Statut détecté: SOON")
-                    return 'SOON'
-                else:
-                    logging.info("[Boudchart] SOON trouvé mais appartient à un autre concert")
-            
-            # Chercher SOLD OUT
-            if 'SOLD OUT' in text_after or 'SOLD-OUT' in text_after:
+            if is_valid_match('SOLD OUT', text_after) or is_valid_match('SOLD-OUT', text_after) or is_valid_match('COMPLET', text_after):
                 logging.info("[Boudchart] ✅ Statut détecté: SOLD_OUT")
                 return 'SOLD_OUT'
             
-            logging.warning("[Boudchart] ⚠️ Aucun statut trouvé après Casablanca")
+            logging.warning("[Boudchart] ⚠️ Aucun statut connu trouvé juste après Casablanca")
             return None
             
         except Exception as e:
